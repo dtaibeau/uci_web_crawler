@@ -1,7 +1,6 @@
 import re
 from bs4 import BeautifulSoup
 from urllib.parse import urlparse
-import logger
 
 def scraper(url, resp):
     """
@@ -40,7 +39,7 @@ def extract_next_links(url, resp):
     
     # if request unsuccessful, return empty list
     if resp.status != 200 or resp.raw_response is None:
-        self.logger.warning(f"Failed to download {tbd_url}, status <{resp.status}>")
+        print('request unsuccessful, returning empty list')
         return []
     
     # otherwise, parse through raw HTML from response obj

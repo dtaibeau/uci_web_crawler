@@ -6,12 +6,14 @@ authors = ["Delphine Tai-Beauchamp <delphinetaibeauchamp@gmail.com>"]
 readme = "README.md"
 
 [tool.poetry.dependencies]
-python = "^3.12"
+python = ">=3.10,<3.13"
+
 spacetime = {path = "packages/spacetime-2.1.1-py3-none-any.whl"}
 cbor = "^1.0.0"
 requests = "^2.32.3"
 bs4 = "^0.0.2"
 logger = "^1.4"
+beautifulsoup4 = "^4.12.3"
 
 
 [build-system]

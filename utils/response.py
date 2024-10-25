@@ -6,9 +6,11 @@ class Response(object):
         self.status = resp_dict["status"]
         self.error = resp_dict["error"] if "error" in resp_dict else None
         try:
+            print(f"Attempting to deserialize: {resp_dict['response']}")
             self.raw_response = (
                 pickle.loads(resp_dict["response"])
                 if "response" in resp_dict else
                 None)
-        except TypeError:
+        except (TypeError, pickle.UnpicklingError) as e:
+            print(f"Deserialization error: {e}")
             self.raw_response = None
