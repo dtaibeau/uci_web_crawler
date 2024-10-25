@@ -73,10 +73,62 @@ def is_valid(url):
         if parsed.scheme not in set(["http", "https"]):
             return False
         
-        # calendar trap
-        if "eventDisplay=day" in parsed.query or "ical=1" in parsed.query:
+        # urls with certain dynamic patterns
+        if 'filter%5B' in url.lower() or 'filter[' in url.lower():
             return False
         
+        # date patterns (/2021/05/25/)
+        if re.search(r'/\d{4}/\d{2}/\d{2}/', url):
+            return False
+
+        # filter out traps: calendar, wiki, login, edit, and pagination URLs
+        if any(term in url.lower() for term in [
+            "/tag/",
+            "/page/",
+            "/category/",
+            "/paged=",
+            "/tag/",
+            "/?tag",
+            "/archive/"
+            "partnerships_posts",
+            "institutes_centers",
+            "research_areas_ics"
+            "calendar/event?action=template",
+            "/?ical=1",
+            "/day/",
+            "/week/",
+            "/month/",
+            "eventdisplay=past",
+            "tribe-bar-date",
+            "paged=",
+            "post_type=tribe_events",
+            "action=login",
+            "action=edit",
+            "/wiki/",
+            "/wiki?",
+            "/wikiword",
+            "/wikisandbox",
+            "/pmwiki",
+            "cookbook",
+            "/sitemap",
+            "csdl/trans",
+            "ieeexplore",
+            "/petko",
+            "/pmichaud",
+            "wikivoyage",
+            "en.wiktionary",
+            "/indexdot",
+            "home?action=login"
+        ]):
+            return False
+
+       
+
+        # filter for UCI domains only
+        if not url.startswith("https://ics.uci.edu") and not url.startswith("https://www.ics.uci.edu"):
+            return False
+        
+
         return not re.match(
             r".*\.(css|js|bmp|gif|jpe?g|ico"
             + r"|png|tiff?|mid|mp2|mp3|mp4"
