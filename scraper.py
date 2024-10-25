@@ -2,6 +2,8 @@ import re
 from bs4 import BeautifulSoup
 from urllib.parse import urlparse
 
+MAX_DEPTH = 5
+
 def scraper(url, resp):
     """
     Extracts and filters valid URLs from a page's response.
@@ -14,7 +16,13 @@ def scraper(url, resp):
         list: A list of valid URLs for further crawling.
     """
     links = extract_next_links(url, resp)
-    return [link for link in links if is_valid(link)]
+    valid_links = []
+    for link in links:
+        if is_valid(link):
+            depth = url.count('/')  # simple heuristic for depth
+            if depth < MAX_DEPTH:
+                valid_links.append(link)
+    return valid_links
 
 def extract_next_links(url, resp):
     """
@@ -80,6 +88,9 @@ def is_valid(url):
         # date patterns (/2021/05/25/)
         if re.search(r'/\d{4}/\d{2}/\d{2}/', url):
             return False
+        
+        if "tribe__ecp_custom" in parsed.query:
+            return False
 
         # filter out traps: calendar, wiki, login, edit, and pagination URLs
         if any(term in url.lower() for term in [
@@ -102,6 +113,7 @@ def is_valid(url):
             "tribe-bar-date",
             "paged=",
             "post_type=tribe_events",
+            "/events/"
             "action=login",
             "action=edit",
             "/wiki/",
