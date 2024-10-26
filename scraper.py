@@ -30,7 +30,7 @@ def is_low_information(content):
     words = re.findall(r'\w+', content)
     return len(words) < MIN_WORD_COUNT
 
-def scraper(url, resp):
+def scraper(url, resp, frontier):
     """
     Extracts and filters valid URLs from a page's response.
 
@@ -41,13 +41,10 @@ def scraper(url, resp):
     Returns:
         list: A list of valid URLs for further crawling.
     """
-
-    # so that other threads don't pik it up
     if is_low_information(resp.content):
         logger.info(f"Skipping low-information URL: {url}")
-        frontier.mark_url_complete(url, low_information=True)
+        frontier.mark_url_complete(url, low_information=True)  # Use frontier to mark as complete
         return []
-
 
     links = extract_next_links(url, resp)
     valid_links = []
@@ -151,7 +148,8 @@ def is_valid(url):
             "linkedin.com/share", "twitter.com/share", "facebook.com/sharer",
             "zoom.us", "docs.google.com", "drive.google.com", "youtu.be", "youtube.com",
             "confirmsubscription", "forms.gle", "subscribe", "google.com/maps", 
-            "calendar.google.com", "/~seal/projects/", "/wp-login.php", "redirect_to=", "index.php?p="
+            "calendar.google.com", "/~seal/projects/", "/wp-login.php", "redirect_to=", 
+            "index.php?p=", "?filter%5B"
         ]
         
         # Check if the URL matches any known traps
