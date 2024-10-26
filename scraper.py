@@ -1,6 +1,7 @@
 import re
 from bs4 import BeautifulSoup
 from urllib.parse import urlparse
+import logging
 
 MAX_DEPTH = 5
 
@@ -87,6 +88,7 @@ def is_valid(url):
         
         # date patterns (/2021/05/25/)
         if re.search(r'/\d{4}/\d{2}/\d{2}/', url):
+            logging.info(f"Skipping date-based trap URL: {url}")
             return False
         
         if "tribe__ecp_custom" in parsed.query:
@@ -133,8 +135,6 @@ def is_valid(url):
             "home?action=login"
         ]):
             return False
-
-       
 
         # filter for UCI domains only
         if not url.startswith("https://ics.uci.edu") and not url.startswith("https://www.ics.uci.edu"):

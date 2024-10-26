@@ -1,4 +1,5 @@
 from utils import get_logger
+from threading import RLock
 from crawler.frontier import Frontier
 from crawler.worker import Worker
 
@@ -9,10 +10,11 @@ class Crawler(object):
         self.frontier = frontier_factory(config, restart)
         self.workers = list()
         self.worker_factory = worker_factory
+        self.domain_lock = RLock()
 
     def start_async(self):
         self.workers = [
-            self.worker_factory(worker_id, self.config, self.frontier)
+            self.worker_factory(worker_id, self.config, self.frontier, self.domain_lock)
             for worker_id in range(self.config.threads_count)]
         for worker in self.workers:
             worker.start()
