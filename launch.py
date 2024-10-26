@@ -10,6 +10,10 @@ def main(config_file, restart):
     cparser.read(config_file)
     config = Config(cparser)
     config.cache_server = get_cache_server(config, restart)
+    
+    # make sure thread count is correct
+    print(f"Starting crawler with {config.threads_count} threads")
+    
     crawler = Crawler(config, restart)
     crawler.start()
 

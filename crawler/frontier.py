@@ -6,6 +6,12 @@ from queue import Queue, Empty
 
 from utils import get_logger, get_urlhash, normalize
 from scraper import is_valid
+import logging
+
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 
 class Frontier(object):
     def __init__(self, config, restart):
@@ -38,6 +44,24 @@ class Frontier(object):
             if not self.save:
                 for url in self.config.seed_urls:
                     self.add_url(url)
+
+    def mark_url_complete(self, url, low_information=False):
+        """
+        Mark the URL as complete in the frontier.
+
+        Args:
+            url (str): The URL to mark as complete.
+            low_information (bool): Whether the URL is low-information.
+        """
+        urlhash = get_urlhash(url)
+        with self.lock:
+            if urlhash in self.save:
+                self.save[urlhash] = (url, True)
+                if low_information:
+                    logger.info(f"Marked low-information URL as complete: {url}")
+            else:
+                logger.error(f"Attempted to complete unknown URL: {url}")
+
 
     def _parse_save_file(self):
         ''' This function can be overridden for alternate saving techniques. '''

@@ -2,10 +2,33 @@ import re
 from bs4 import BeautifulSoup
 from urllib.parse import urlparse, urljoin
 import logging
+import urllib.robotparser
+from urllib.parse import urlparse
 
 MAX_DEPTH = 5
+MIN_WORD_COUNT = 50
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+robots_cache = {}
+
+# abide by robots.txt
+def can_fetch(url, user_agent='*'):
+    parsed = urlparse(url)
+    base_url = f"{parsed.scheme}://{parsed.netloc}"
+    
+    if base_url not in robots_cache:
+        rp = urllib.robotparser.RobotFileParser()
+        rp.set_url(f"{base_url}/robots.txt")
+        rp.read()
+        robots_cache[base_url] = rp
+    
+    return robots_cache[base_url].can_fetch(user_agent, url)
+
+def is_low_information(content):
+    words = re.findall(r'\w+', content)
+    return len(words) < MIN_WORD_COUNT
 
 def scraper(url, resp):
     """
@@ -18,6 +41,14 @@ def scraper(url, resp):
     Returns:
         list: A list of valid URLs for further crawling.
     """
+
+    # so that other threads don't pik it up
+    if is_low_information(resp.content):
+        logger.info(f"Skipping low-information URL: {url}")
+        frontier.mark_url_complete(url, low_information=True)
+        return []
+
+
     links = extract_next_links(url, resp)
     valid_links = []
     for link in links:
@@ -27,6 +58,7 @@ def scraper(url, resp):
                 valid_links.append(link)
             else:
                 logger.info(f"Skipping {link} - Exceeded max depth")
+    frontier.mark_url_complete(url)
     return valid_links
 
 def extract_next_links(url, resp):
@@ -96,37 +128,55 @@ def is_valid(url):
     """
     try:
         parsed = urlparse(url)
+        
+        # Ensure URL scheme is HTTP/HTTPS
         if parsed.scheme not in {"http", "https"}:
             return False
-
-        # Check for dynamic patterns and traps
-        if 'filter%5B' in url.lower() or 'filter[' in url.lower():
+        
+        # Handle robots.txt compliance
+        if not can_fetch(url):
+            logger.info(f"Blocked by robots.txt: {url}")
             return False
-
-        # Date-based traps (e.g., /2021/05/25/)
-        if re.search(r'/\d{4}/\d{2}/\d{2}/', url):
-            logger.info(f"Skipping date-based trap URL: {url}")
-            return False
-
-        # Skip URLs with specific patterns (potential traps)
+        
+        # Common traps and patterns to exclude
         trap_terms = [
             "/tag/", "/page/", "/category/", "/paged=", "/?tag", "/archive/",
             "partnerships_posts", "institutes_centers", "research_areas_ics",
             "calendar/event?action=template", "/?ical=1", "/day/", "/week/", "/month/",
-            "eventdisplay=past", "tribe-bar-date", "post_type=tribe_events", "/events/",
-            "action=login", "action=edit", "/wiki/", "/wiki?", "/wikiword",
-            "/wikisandbox", "/pmwiki", "cookbook", "/sitemap", "csdl/trans",
-            "ieeexplore", "/petko", "/pmichaud", "wikivoyage", "en.wiktionary",
-            "/indexdot", "home?action=login", "/event/"
+            "eventdisplay=past", "tribe-bar-date", "post_type=tribe_events",
+            "/events/", "/event/", "/wp-login.php", "action=login", "action=edit",
+            "/wiki/", "/wiki?", "/wikiword", "/wikisandbox", "/pmwiki", "cookbook",
+            "/sitemap", "csdl/trans", "ieeexplore", "/petko", "/pmichaud", "wikivoyage",
+            "en.wiktionary", "/indexdot", "home?action=login", "google.com/calendar",
+            "linkedin.com/share", "twitter.com/share", "facebook.com/sharer",
+            "zoom.us", "docs.google.com", "drive.google.com", "youtu.be", "youtube.com",
+            "confirmsubscription", "forms.gle", "subscribe", "google.com/maps", 
+            "calendar.google.com", "/~seal/projects/", "/wp-login.php", "redirect_to=", "index.php?p="
         ]
+        
+        # Check if the URL matches any known traps
         if any(term in url.lower() for term in trap_terms):
             logger.info(f"Skipping potential trap URL: {url}")
             return False
-
-        # Restrict crawling to UCI domains only
-        if not parsed.netloc.endswith("ics.uci.edu"):
+        
+        # numeric publications
+        if re.search(r'/r\d+\.html$', url.lower()):
+            logger.info(f"Skipping numeric trap URL: {url}")
+            return False
+        
+        if re.search(r'/ics_x33/\w+\.html$', url.lower()):
+            logger.info(f"Skipping repetitive trap URL: {url}")
             return False
 
+        
+        # Restrict to specified UCI domains
+        allowed_domains = [
+            "ics.uci.edu", "cs.uci.edu", "informatics.uci.edu", "stat.uci.edu",
+            "today.uci.edu/department/information_computer_sciences"
+        ]
+        if not any(domain in parsed.netloc for domain in allowed_domains):
+            return False
+        
         # Filter out URLs based on file extensions (non-HTML content)
         if re.match(
             r".*\.(css|js|bmp|gif|jpe?g|ico|png|tiff?|mid|mp2|mp3|mp4|wav|avi|mov|"
@@ -136,9 +186,9 @@ def is_valid(url):
             parsed.path.lower()
         ):
             return False
-
+        
         return True
 
-    except TypeError:
-        logger.error(f"TypeError for URL: {url}")
+    except Exception as e:
+        logger.error(f"Error validating URL: {url}, {e}")
         return False
