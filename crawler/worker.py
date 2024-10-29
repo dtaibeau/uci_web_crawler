@@ -58,7 +58,7 @@ class Worker(Thread):
                 )
 
             # add scraped URLs to frontier
-            scraped_urls = scraper.scraper(tbd_url, resp)
+            scraped_urls = scraper.scraper(tbd_url, resp, self.frontier)
             for scraped_url in scraped_urls:
                 # MT edit: thread-safe frontier access
                 with self.domain_lock:

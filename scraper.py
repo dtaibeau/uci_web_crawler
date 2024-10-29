@@ -4,6 +4,7 @@ from urllib.parse import urlparse, urljoin
 import logging
 import urllib.robotparser
 from urllib.parse import urlparse
+from collections import Counter
 
 MAX_DEPTH = 5
 MIN_WORD_COUNT = 50
@@ -12,6 +13,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 robots_cache = {}
+words_counter = Counter()
 
 # abide by robots.txt
 def can_fetch(url, user_agent='*'):
@@ -26,9 +28,24 @@ def can_fetch(url, user_agent='*'):
     
     return robots_cache[base_url].can_fetch(user_agent, url)
 
-def is_low_information(content):
-    words = re.findall(r'\w+', content)
-    return len(words) < MIN_WORD_COUNT
+def word_counter(content):
+
+   # create list of English stop words
+
+   stop_w = [
+       "a", "about", "above", "after", "again", "against", "all",
+       "am", "an", "and", "any", "are", "aren't", "as", "at", "be",
+       "because", "been", "before", "being", "below", "between", "both",
+       "but", "by", "can't", "cannot", "could", "couldn't", "did", "didn't",
+       "do", "does", "doesn't", "doing", "don't", "down", "during", "each",
+       "few", "for", "from", "further", "had", "hadn't", "has", "hasn't",
+       "have", "haven't", "having", "he", "he'd", "he'll", "he's", "her",
+       "here", "here's", "hers", "herself", "him", "himself", "his", "how",
+       "how's", "i", "i'd", "i'll", "i'm", "i've", "if", "in", "into", "is",
+       "isn't", "it", "it's", "its", "itself", "let's", "me", "more", "most",
+       "mustn't", "my", "myself", "no", "nor", "not", "of", "off", "on", "once",
+       "only", "or"]
+   
 
 def scraper(url, resp, frontier):
     """
@@ -37,24 +54,32 @@ def scraper(url, resp, frontier):
     Args:
         url (str): The URL being processed.
         resp (utils.response.Response): The response object with the page content.
+        frontier (Frontier): The frontier to mark URLs as complete.
 
     Returns:
         list: A list of valid URLs for further crawling.
     """
-    if is_low_information(resp.content):
-        logger.info(f"Skipping low-information URL: {url}")
-        frontier.mark_url_complete(url, low_information=True)  # Use frontier to mark as complete
-        return []
+    # Check if the page is low-information
+    # if is_low_information(resp.raw_response.content):
+    #     logger.info(f"Skipping low-information URL: {url}")
+    #     frontier.mark_url_complete(url, low_information=True)
+    #     return []
 
+    # Extract links from the page content
     links = extract_next_links(url, resp)
     valid_links = []
+
     for link in links:
         if is_valid(link):
-            depth = url.count('/')  # simple heuristic for depth
+            depth = url.count('/')  # Simple heuristic for depth
             if depth < MAX_DEPTH:
                 valid_links.append(link)
             else:
                 logger.info(f"Skipping {link} - Exceeded max depth")
+        # else:
+        #     logger.info(f"Skipping {link} - Invalid URL")  # Log invalid URLs
+
+    # Mark the original URL as complete
     frontier.mark_url_complete(url)
     return valid_links
 
