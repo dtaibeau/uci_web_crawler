@@ -6,13 +6,14 @@ from hashlib import md5
 from collections import Counter
 
 
-MAX_DEPTH = 8
+MAX_DEPTH = 5
 MIN_WORD_COUNT = 50
 
 unique_urls = set()
 subdomain_counter = Counter()
 words_counter = Counter()
 page_hashes = set()
+page_word_sets = {}
 
 longest_page_info = {
     "url": None,
@@ -48,27 +49,65 @@ robots_cache = {
     "today.uci.edu": {"/department/information_computer_sciences/": True},
 }
 
-
-def is_similar_content(content):
+def jaccard_similarity(set1, set2):
     """
-    Checks if the page content is similar to previously processed content.
-    Uses MD5 hashing to detect duplicate content.
-
+    Computes the Jaccard similarity between two sets of words.
+    
     Args:
-        content (str): The text content of the page.
+        set1 (set): Set of words from the first document.
+        set2 (set): Set of words from the second document.
+    
+    Returns:
+        float: Jaccard similarity score (0 to 1).
+    """
+    intersection = set1.intersection(set2)
+    union = set1.union(set2)
+    return len(intersection) / len(union) if union else 0
 
+# def is_similar_content(content):
+#     """
+#     Checks if the page content is similar to previously processed content.
+#     Uses MD5 hashing to detect duplicate content.
+
+#     Args:
+#         content (str): The text content of the page.
+
+#     Returns:
+#         bool: True if similar content was detected, otherwise False.
+#     """
+#     # calculate hash of the content
+#     content_hash = md5(content.encode('utf-8')).hexdigest()
+    
+#     if content_hash in page_hashes:
+#         logger.info("Detected similar content. Skipping page.")
+#         return True
+    
+#     # add page's hash to the set for future comparisons
+#     page_hashes.add(content_hash)
+#     return False
+
+def is_similar_content(url, content):
+    """
+    Checks if the page content is similar to previously processed content using Jaccard similarity.
+    
+    Args:
+        url (str): The URL of the page.
+        content (str): The text content of the page.
+    
     Returns:
         bool: True if similar content was detected, otherwise False.
     """
-    # Calculate a hash of the content
-    content_hash = md5(content.encode('utf-8')).hexdigest()
-    
-    if content_hash in page_hashes:
-        logger.info("Detected similar content. Skipping page.")
-        return True
-    
-    # Add this page's hash to the set for future comparisons
-    page_hashes.add(content_hash)
+    # Tokenize content into a set of words
+    words = set(re.findall(r'\b[a-zA-Z]{3,}\b|\b\w{3,}\b', content.lower()))
+
+    # Check similarity with previously processed pages
+    for prev_url, prev_words in page_word_sets.items():
+        if jaccard_similarity(words, prev_words) > 0.85:
+            logger.info(f"Detected similar content to {prev_url}. Skipping {url}.")
+            return True
+
+    # Store the word set for future comparisons
+    page_word_sets[url] = words
     return False
 
 
@@ -93,10 +132,12 @@ def can_fetch(url):
     return False
 
 
+
 def is_empty_page(content):
     soup = BeautifulSoup(content, 'lxml')
     text = soup.get_text(strip=True)
     return len(text) == 0
+
 
 
 def is_low_information(content):
@@ -111,11 +152,11 @@ def is_low_information(content):
     # find urls
     hyperlinks = re.findall(r'https?://\S+|www\.\S+', content)
     
-    # if less than min words and urls < 5 = low infdo page
+    # if less than min words and urls < 5 = low info page
     if len(words) < MIN_WORD_COUNT and len(hyperlinks) < 5:
         return True
 
-    # Check for presence of key tags
+    # check for presence of key tags
     significant_elements = soup.find_all(['p', 'h1', 'h2', 'h3', 'img'])
     if significant_elements:
         return False
@@ -160,10 +201,11 @@ def scraper(url, resp, frontier):
     if isinstance(content, bytes):
         content = content.decode('utf-8', errors='ignore')
 
-    if is_empty_page(content) or is_low_information(content) or is_similar_content(content):
+    if is_empty_page(content) or is_low_information(content) or is_similar_content(url, content):
         logger.info(f"Skipping dead, similar, or low-information URL: {url}")
         frontier.mark_url_complete(url)
         return []
+
     
     # update report metrics if page is unique
     if is_unique_page(url):
@@ -223,6 +265,8 @@ def handle_cache_server_error(url, status, frontier):
     
     frontier.mark_url_complete(url)
 
+
+
 def extract_next_links(url, resp):
     """
     Extracts all URLs from the HTML content of the response, ensuring they are unique.
@@ -238,7 +282,7 @@ def extract_next_links(url, resp):
     soup = BeautifulSoup(resp.raw_response.content, 'lxml')
     links = set()
 
-    # Extract and validate hyperlinks
+    # hyperlinks
     for anchor in soup.find_all('a', href=True):
         link = urljoin(url, urlparse(anchor['href'])._replace(fragment='').geturl())
         if is_valid(link):
@@ -246,6 +290,8 @@ def extract_next_links(url, resp):
             #logger.info(f"Valid link added: {link}")
 
     return list(links)
+
+
 
 def calculate_depth(url):
     """
@@ -258,6 +304,8 @@ def calculate_depth(url):
         int: The depth of the URL.
     """
     return urlparse(url).path.count('/')
+
+
 
 def detect_potential_trap(url):
     """
@@ -276,13 +324,12 @@ def detect_potential_trap(url):
     parsed_url = urlparse(url)
     domain = parsed_url.netloc
     
-    # Apply additional filtering for specific domains
     if domain in {"archive.ics.uci.edu", "ics.uci.edu", "swiki.ics.uci.edu" }:
         if any(pattern in url for pattern in repetitive_patterns):
             logger.info(f"Skipping potential media trap URL: {url}")
             return True
     
-    # General repetitive patterns and query count check
+    # repetitive patterns and query count check
     general_patterns = ["/?", "&page=", "&start=", "&filter=", "&sort="]
     if any(pattern in url for pattern in general_patterns):
         return True
@@ -309,36 +356,36 @@ def is_valid(url):
         path = parsed.path
         query = parsed.query
 
-        # 7. Ensure URL uses HTTP or HTTPS
+        # HTTP or HTTPS
         if parsed.scheme not in {"http", "https"}:
             return False
 
-        # 1. Check domain and specific path for today.uci.edu
         if not any(domain == allowed_domain or domain.endswith("." + allowed_domain) for allowed_domain in allowed_domains):
             return False
         
-        # Path restriction for today.uci.edu
         if domain == "today.uci.edu":
             if not any(path.startswith(allowed_path) for allowed_path in allowed_paths.get(domain, [])):
                 return False
 
-        # 2. Block specific date-based archive URLs on www.informatics.uci.edu
+        # date-based archive URLs on www.informatics.uci.edu
         if domain == "www.informatics.uci.edu" and re.search(r"/\d{4}/\d{2}/?$", path):
             return False
         
-        date_pattern = re.compile(r'/\d{4}/\d{2}/\d{2}/')  # Matches /YYYY/MM/DD/ or -based paths
+        if "randomSmiles100K" in path:
+            return False
+        
+        date_pattern = re.compile(r'/\d{4}/\d{2}/\d{2}/')  # /YYYY/MM/DD/ 
         if date_pattern.search(url):
             return False    
         
         if domain == "www.flamingo.ics.uci.edu":
             return False
 
-        # 3. Check robots.txt compliance
         if not can_fetch(url):
-            logger.info(f"Blocked by robots.txt: {url}")
+            logger.info(f"Blocked by mock robots.txt: {url}")
             return False
         
-        # 9. Exclude URLs containing trap terms or specific patterns
+        # trap terms 
         trap_terms = [
             "page_id", "/pdf/", "/tag/", "/page/", "/category/", "/paged=", "/?tag", "/archive/",
             "partnerships_posts", "institutes_centers", "research_areas_ics",
@@ -355,28 +402,29 @@ def is_valid(url):
             "index.php?p=", "?filter%5B", "%5B", "jgarcia/", "tab_files", "do=media", "tab_details", "ns=", "image=", "upload",
             "backlinks", "commit", "html_oopsc", "password", "login", "phpmyadmin", "upname=", "/download",
             "doku.php", "follow-us", "private_downloads", ".md", "PageNotFound", "/assignments", "datasets?search",
-            "letter-of-recommendation-workshop", "/junkyard/", "Classes-2008F", "/sw/clsmtools?", "/Lectures/",
-            "~eppstein", "flamingo", "~aces/", "/releases/", "Classes-CS178-Notes/", "/patient-",
-            "~thornton", "/data/", "ics139ws2014", "/photos/", "/grades/", "/javacourse/", "/SAFIRE/", "/teaching/",
-            "~dechter/publications/", "seminar-series/", "faculty-profiles/", "student-profiles/", "undergraduate-alumni-spotlights/"
-            "explore/", "impact/", "randomSmiles100K", "ooad/", "diss/","mailman/admin/", "/colorful-reading", "~fowlkes/publications2.html"
+            "Classes-2008F", "/sw/clsmtools?", "/Lectures/", "/Classes/", "2020-industryshowcase/"
+            "flamingo", "/patient-", "~eppstein/", "ics139ws2014", "/~dsm/dyn/", "/papers/"
+            "/data/", "/photos/", "/grades/", "/teaching/", "~dechter/", "~wjohnson/BIDA/", "/research-areas/"
+            "faculty-profiles/", "explore/","mailman/admin/", "/colorful-reading", "/news/", "details.php?id=",
+            "video/cs178/", "%7Emagda/", "~wjohnson", "~smyth/", "/papers/", "~lab/", "2019-industryshowcase/", "~pfbaldi?"
+            "videos/", "dataset/", "research-areas/", "~alexv/", "~dock/", "~baldig/", "~fielding"
+            "~smyth", "people/", "faculty2", "~kay", "%7Ethornton", "~cbdaviso/", "~achio/"
         ]
 
-        # 4. Detect traps
         if detect_potential_trap(url):
             return False
 
-        # 5. Exclude URLs with common trap query patterns
+        # URLs with common trap query patterns
         if "filter%5B" in query or "%5B" in query:
             logger.info("filter%5B trap detected")
             return False
 
-        # 6. Skip static content or media files based on path patterns
+        # static content or media files based on path patterns
         if "wp-content/uploads" in path:
             logger.info(f"Skipping static content URL: {url}")
             return False
 
-        # 8. Block large file types by extension
+        # large file types by extension
         large_file_extensions = (
             ".pdf", ".docx", ".mp4", ".mp3", ".mpg", ".avi", ".mov", ".zip", ".rar", ".pps", ".ppsx", ".pptx", ".ppt"
         )
@@ -386,14 +434,14 @@ def is_valid(url):
         if any(term in url.lower() for term in trap_terms):
             return False
 
-        # 10. Block URLs ending with specific numeric patterns (trap for certain publications)
+        # certain publications
         if re.search(r'/r\d+\.html$', url.lower()):
             return False
         
         if re.search(r'/ics_x33/\w+\.html$', url.lower()):
             return False
 
-        # 11. Exclude non-HTML file types
+        # non-HTML file types
         if re.match(
             r".*\.(css|js|bmp|gif|jpe?g|ico|png|tiff?|mid|mp2|mp3|mp4|wav|avi|mov|"
             r"mpeg|ram|m4v|mkv|ogg|ogv|pdf|ps|eps|tex|ppt|pptx|doc|docx|xls|xlsx|names|"
@@ -409,10 +457,11 @@ def is_valid(url):
         logger.error(f"Error validating URL: {url}, {e}")
         return False
 
+
  
 def is_unique_page(url):
     parsed_url = urlparse(url)
-    normalized_url = urlunparse(parsed_url._replace(fragment='')).lower()  # Normalize URL
+    normalized_url = urlunparse(parsed_url._replace(fragment='')).lower()  # normalize URL
 
     if is_valid(normalized_url) and normalized_url not in unique_urls:
         unique_urls.add(normalized_url)
@@ -420,6 +469,8 @@ def is_unique_page(url):
     else:
         logger.info(f"Duplicate or invalid URL skipped: {normalized_url}")
         return False
+
+
 
 def num_unique_pages():
     """
@@ -431,6 +482,7 @@ def num_unique_pages():
     return len(unique_urls)
 
 
+
 def longest_page(url, content):
     """
     Updates the longest page information based on word count, excluding HTML markup.
@@ -439,18 +491,19 @@ def longest_page(url, content):
         url (str): The URL of the page.
         content (str): The HTML content of the page.
     """
-    # Parse content to remove HTML tags
+    # remove HTML tags
     soup = BeautifulSoup(content, 'html.parser')
     text = soup.get_text()  # Extract only text content
     
-    # Count words in the plain text
+    # count words in the plain text
     words = re.findall(r'\w+', text.lower())
     word_count = len(words)
     
-    # Update longest page info if this page has more words
+    # update longest page info if curr page has more words
     if word_count > longest_page_info["word_count"]:
         longest_page_info["url"] = url
         longest_page_info["word_count"] = word_count
+
 
 
 def common_words_count(content):
@@ -485,10 +538,10 @@ def common_words_count(content):
     words = re.findall(r'\b[a-zA-Z]{3,}\b|\b\w{3,}\b', content.lower())
     filtered_words = [word for word in words if word not in stop_words and len(word) >= 3]
     
-    # Update global counter with filtered words
+    # update global counter with filtered words
     words_counter.update(filtered_words)
   
-    
+
 
 def num_subdomains(url):
     """
@@ -498,11 +551,14 @@ def num_subdomains(url):
         url (str): The URL to check for subdomains.
     """
     parsed = urlparse(url)
+
+    # additional check
     if any(domain in parsed.netloc for domain in ["ics.uci.edu", "cs.uci.edu", "informatics.uci.edu", "stat.uci.edu"]) or \
        (parsed.netloc == "today.uci.edu" and parsed.path.startswith("/department/information_computer_sciences")):
         
         subdomain = parsed.netloc
         subdomain_counter[subdomain] += 1
+
 
 def generate_report():
     """
@@ -522,6 +578,8 @@ def generate_report():
             report_file.write(f"{word}: {count}\n")
         
         report_file.write("\nSubdomains and Counts:\n")
+        total_subdomains = sum(subdomain_counter.values())
+        report_file.write(f"\nTotal Number of Subdomains: {total_subdomains}")
         for subdomain, count in sorted(subdomain_counter.items()):
             report_file.write(f"{subdomain}: {count}\n")
     
