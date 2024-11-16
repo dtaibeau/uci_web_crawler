@@ -6,7 +6,7 @@ from hashlib import md5
 from collections import Counter
 
 
-MAX_DEPTH = 5
+MAX_DEPTH = 7
 MIN_WORD_COUNT = 50
 
 unique_urls = set()
@@ -97,16 +97,16 @@ def is_similar_content(url, content):
     Returns:
         bool: True if similar content was detected, otherwise False.
     """
-    # Tokenize content into a set of words
+    # tokenize content into a set of words
     words = set(re.findall(r'\b[a-zA-Z]{3,}\b|\b\w{3,}\b', content.lower()))
 
-    # Check similarity with previously processed pages
+    # check similarity with previously processed pages
     for prev_url, prev_words in page_word_sets.items():
-        if jaccard_similarity(words, prev_words) > 0.85:
+        if jaccard_similarity(words, prev_words) > 0.70:
             logger.info(f"Detected similar content to {prev_url}. Skipping {url}.")
             return True
 
-    # Store the word set for future comparisons
+    # store word set for future comparisons
     page_word_sets[url] = words
     return False
 
@@ -401,14 +401,9 @@ def is_valid(url):
             "calendar.google.com", "/~seal/projects/", "/wp-login.php", "redirect_to=", 
             "index.php?p=", "?filter%5B", "%5B", "jgarcia/", "tab_files", "do=media", "tab_details", "ns=", "image=", "upload",
             "backlinks", "commit", "html_oopsc", "password", "login", "phpmyadmin", "upname=", "/download",
-            "doku.php", "follow-us", "private_downloads", ".md", "PageNotFound", "/assignments", "datasets?search",
-            "Classes-2008F", "/sw/clsmtools?", "/Lectures/", "/Classes/", "2020-industryshowcase/"
-            "flamingo", "/patient-", "~eppstein/", "ics139ws2014", "/~dsm/dyn/", "/papers/"
-            "/data/", "/photos/", "/grades/", "/teaching/", "~dechter/", "~wjohnson/BIDA/", "/research-areas/"
-            "faculty-profiles/", "explore/","mailman/admin/", "/colorful-reading", "/news/", "details.php?id=",
-            "video/cs178/", "%7Emagda/", "~wjohnson", "~smyth/", "/papers/", "~lab/", "2019-industryshowcase/", "~pfbaldi?"
-            "videos/", "dataset/", "research-areas/", "~alexv/", "~dock/", "~baldig/", "~fielding"
-            "~smyth", "people/", "faculty2", "~kay", "%7Ethornton", "~cbdaviso/", "~achio/"
+            "doku.php", "follow-us", "private_downloads", ".md", "PageNotFound",
+            "/sw/clsmtools?", "flamingo", "~eppstein/", "/data/", "/photos/",
+            "/colorful-reading", "videos/", "phpmyadmin"
         ]
 
         if detect_potential_trap(url):
@@ -578,7 +573,7 @@ def generate_report():
             report_file.write(f"{word}: {count}\n")
         
         report_file.write("\nSubdomains and Counts:\n")
-        total_subdomains = sum(subdomain_counter.values())
+        total_subdomains = len(subdomain_counter)
         report_file.write(f"\nTotal Number of Subdomains: {total_subdomains}")
         for subdomain, count in sorted(subdomain_counter.items()):
             report_file.write(f"{subdomain}: {count}\n")
