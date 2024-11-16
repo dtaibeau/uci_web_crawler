@@ -58,7 +58,7 @@ new: 8216
 
 Subdomains and Counts:
 
-Total Number of Subdomains: 82
+Total Number of Subdomains: 140
 
 accessibility.ics.uci.edu: 5
 acoi.ics.uci.edu: 2
